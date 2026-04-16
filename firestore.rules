@@ -1,0 +1,157 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (request.auth.token.email == "alwashameen96@gmail.com" || request.auth.token.email == "sisro.savagon22@gmail.com");
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUserProfile(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'faceShape', 'pd', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 256 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2048)) &&
+             (!('faceShape' in data) || (data.faceShape is string && data.faceShape.size() < 50)) &&
+             (!('pd' in data) || (data.pd is number && data.pd > 30 && data.pd < 100)) &&
+             data.createdAt is string;
+    }
+
+    function isValidTryOn(data) {
+      return hasOnlyAllowedFields(['userId', 'itemId', 'itemName', 'category', 'imageUrl', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.itemId is string && data.itemId.size() > 0 && data.itemId.size() < 128 &&
+             (!('itemName' in data) || (data.itemName is string && data.itemName.size() < 100)) &&
+             (!('category' in data) || (data.category is string && data.category.size() < 50)) &&
+             data.imageUrl is string && data.imageUrl.size() < 1048576 && // Allow up to 1MB for base64
+             data.createdAt is string;
+    }
+
+    function isValidProduct(data) {
+      return hasOnlyAllowedFields(['name', 'type', 'category', 'price', 'stock', 'image', 'gender', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.type is string && data.type.size() > 0 && data.type.size() < 100 &&
+             data.category is string && data.category.size() > 0 && data.category.size() < 50 &&
+             data.price is number && data.price >= 0 &&
+             data.stock is number && data.stock >= 0 &&
+             data.image is string && data.image.size() < 2048 &&
+             (!('gender' in data) || (data.gender is string && data.gender in ['men', 'women', 'unisex'])) &&
+             data.createdAt is string;
+    }
+
+    function isValidOrder(data) {
+      return hasOnlyAllowedFields(['userId', 'userEmail', 'items', 'subtotal', 'shippingFee', 'totalAmount', 'status', 'shippingDetails', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.userEmail is string && isValidEmail(data.userEmail) &&
+             data.items is list && data.items.size() > 0 && data.items.size() < 100 &&
+             (!('subtotal' in data) || (data.subtotal is number && data.subtotal >= 0)) &&
+             (!('shippingFee' in data) || (data.shippingFee is number && data.shippingFee >= 0)) &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             (!('shippingDetails' in data) || (data.shippingDetails is map)) &&
+             data.status in ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'] &&
+             data.createdAt is string;
+    }
+
+    function isValidSavedDesign(data) {
+      return hasOnlyAllowedFields(['userId', 'imageUrl', 'prompt', 'size', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.imageUrl is string && data.imageUrl.size() < 1048576 &&
+             data.prompt is string && data.prompt.size() < 1000 &&
+             data.size is string && data.size in ['1K', '2K', '4K'] &&
+             data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && 
+                    isValidUserProfile(request.resource.data) && 
+                    request.resource.data.uid == userId;
+      allow update: if isOwner(userId) && 
+                    isValidUserProfile(request.resource.data) && 
+                    areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /tryons/{tryonId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && 
+                    isValidTryOn(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+                    resource.data.userId == request.auth.uid &&
+                    isValidTryOn(request.resource.data) && 
+                    areImmutableFieldsUnchanged(['userId', 'createdAt']);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /products/{productId} {
+      allow read: if true; // Anyone can read products
+      allow create: if isAdmin() && isValidProduct(request.resource.data);
+      allow update: if (isAdmin() && isValidProduct(request.resource.data) && areImmutableFieldsUnchanged(['createdAt'])) ||
+                    (isAuthenticated() && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']) && 
+                     request.resource.data.stock >= 0 && 
+                     request.resource.data.stock < resource.data.stock);
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && 
+                    isValidOrder(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() && isValidOrder(request.resource.data) && areImmutableFieldsUnchanged(['userId', 'createdAt']);
+      allow delete: if isAdmin();
+    }
+
+    match /saved_designs/{designId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && 
+                    isValidSavedDesign(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+                    resource.data.userId == request.auth.uid &&
+                    isValidSavedDesign(request.resource.data) && 
+                    areImmutableFieldsUnchanged(['userId', 'createdAt']);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+}
