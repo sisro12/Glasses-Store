@@ -2,34 +2,15 @@ import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export function Home() {
-  const [trends, setTrends] = useState<string>('');
-  const [isLoadingTrends, setIsLoadingTrends] = useState(true);
   const { t, language } = useLanguage();
+  const [trends, setTrends] = useState<string>(language === 'ar' ? "تستمر الكرونوغرافات البسيطة والنظارات الهندسية الجريئة في السيطرة على أزياء الموضة الفاخرة هذا الموسم." : "Minimalist chronographs and bold geometric eyewear continue to dominate luxury fashion this season.");
+  const [isLoadingTrends, setIsLoadingTrends] = useState(false);
 
   useEffect(() => {
-    async function fetchTrends() {
-      setIsLoadingTrends(true);
-      try {
-        const promptLang = language === 'ar' ? 'in Arabic' : 'in English';
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: `What are the top 3 luxury fashion trends right now covering eyewear, watches, and apparel? Provide a short, stylish 2-sentence summary ${promptLang}.`
-        });
-        setTrends(response.text || (language === 'ar' ? "تستمر الكرونوغرافات البسيطة والنظارات الهندسية الجريئة في السيطرة على أزياء الموضة الفاخرة هذا الموسم." : "Minimalist chronographs and bold geometric eyewear continue to dominate luxury fashion this season."));
-      } catch (error) {
-        console.error("Failed to fetch trends", error);
-        setTrends(language === 'ar' ? "تستمر الكرونوغرافات البسيطة والنظارات الهندسية الجريئة في السيطرة على أزياء الموضة الفاخرة هذا الموسم." : "Minimalist chronographs and bold geometric eyewear continue to dominate luxury fashion this season.");
-      } finally {
-        setIsLoadingTrends(false);
-      }
-    }
-    fetchTrends();
+    setTrends(language === 'ar' ? "تستمر الكرونوغرافات البسيطة والنظارات الهندسية الجريئة في السيطرة على أزياء الموضة الفاخرة هذا الموسم." : "Minimalist chronographs and bold geometric eyewear continue to dominate luxury fashion this season.");
   }, [language]);
 
   const titleWords = t('home.hero.title').split(' ');

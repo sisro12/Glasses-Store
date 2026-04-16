@@ -71,7 +71,6 @@ export function Navbar() {
         
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-stone-600">
           <Link to="/shop" className="hover:text-stone-900 transition-colors uppercase">{language === 'ar' ? 'المتجر' : 'Shop'}</Link>
-          <Link to="/design" className="hover:text-stone-900 transition-colors uppercase">{t('nav.design')}</Link>
           <Link to="/try-on" className="hover:text-stone-900 transition-colors flex items-center gap-2 uppercase">
             <Camera className="w-4 h-4" />
             {t('nav.tryOn')}
