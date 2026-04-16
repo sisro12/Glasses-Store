@@ -3,6 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Camera, Upload, Sparkles, Ruler, ChevronRight, CheckCircle2, Glasses, Watch, Shirt, Footprints, Gem, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from '@google/genai';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -97,16 +98,20 @@ export function TryOn() {
     if (!portraitBase64) return;
     setIsAnalyzing(true);
     try {
-      // Mock analysis result - AI usage removed
-      const result = {
-        measurement: "Standard Fit",
-        characteristic: "Classic Features",
-        recommendation: "Our premium collection suits your style perfectly."
-      };
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const base64Data = portraitBase64.split(',')[1];
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: [
+          { inlineData: { data: base64Data, mimeType: "image/jpeg" } },
+          currentConfig.analysisPrompt
+        ],
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
       
-      // Artificial delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
+      const result = JSON.parse(response.text || '{}');
       setAnalysisResult(result);
       
       // After analysis, automatically trigger generation
@@ -132,19 +137,86 @@ export function TryOn() {
   const generateTryOn = async (analysisResultData: any) => {
     if (!portraitBase64 || !selectedItem) return;
     
+    if (window.aistudio) {
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await window.aistudio.openSelectKey();
+      }
+    }
+
     setIsGenerating(true);
-    setIsAnalyzing(false); 
-    setStep(3); 
+    setIsAnalyzing(false); // Turn off analyzing spinner
+    setStep(3); // Move to result view (which will show generating spinner)
     setIsSaved(false);
     
     try {
-      // Mock generation result - AI usage removed
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setTryOnImage(selectedItem.image);
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const portraitBase64Data = portraitBase64.split(',')[1];
+      const itemBase64Full = await fetchImageAsBase64(selectedItem.image);
+      const itemBase64Data = itemBase64Full.split(',')[1];
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            { text: `Reference Image 1: A high-resolution photo of a person's ${currentConfig.promptTarget}.` },
+            {
+              inlineData: {
+                data: portraitBase64Data,
+                mimeType: "image/jpeg",
+              },
+            },
+            { text: `Reference Image 2: A product photo of ${currentConfig.label}.` },
+            {
+              inlineData: {
+                data: itemBase64Data,
+                mimeType: "image/jpeg",
+              },
+            },
+            {
+              text: `Instructions:
+
+Extraction & Placement: Extract the item from Image 2 and place it onto the ${currentConfig.promptTarget} in Image 1.
+
+Perspective & Alignment: Automatically warp and adjust the item's perspective to match the anatomy's tilt and angle.
+
+Realistic Integration: Apply 'Ambient Occlusion' and 'Contact Shadows' where the item touches the body.
+
+Fidelity: Add realistic reflections and subtle textures so it looks like a real physical object under the current lighting of the portrait.
+
+Final Output: A photorealistic image where the user is naturally wearing the item. No artifacts, 100% seamless blending.`,
+            },
+          ],
+        }
+      });
+
+      let generatedImageUrl = null;
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          generatedImageUrl = `data:image/jpeg;base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+
+      if (generatedImageUrl) {
+        setTryOnImage(generatedImageUrl);
+      } else {
+        throw new Error("No image generated");
+      }
 
     } catch (error: any) {
       console.error("Try-on generation failed", error);
-      toast.error(language === 'ar' ? 'فشل توليد التجربة. يرجى المحاولة مرة أخرى.' : 'Failed to generate try-on. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+      if (errorMessage.includes('PERMISSION_DENIED') || errorMessage.includes('403') || errorMessage.includes('Requested entity was not found')) {
+        if (window.aistudio) {
+          await window.aistudio.openSelectKey();
+          toast.error(language === 'ar' ? 'يرجى اختيار مفتاح API صالح والمحاولة مرة أخرى.' : 'Please select a valid API key and try again.');
+        } else {
+          toast.error(language === 'ar' ? 'تم رفض الإذن. يرجى التأكد من صلاحيات مفتاح API.' : 'Permission denied. Please ensure your API key has access.');
+        }
+      } else {
+        toast.error(language === 'ar' ? 'فشل توليد التجربة. يرجى المحاولة مرة أخرى.' : 'Failed to generate try-on. Please try again.');
+      }
       setStep(2);
     } finally {
       setIsGenerating(false);

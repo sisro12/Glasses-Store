@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, ImageIcon, Download, Loader2, BookmarkPlus } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Download, Loader2, BookmarkPlus } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toast } from 'sonner';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
@@ -15,7 +16,54 @@ export function Design() {
   const { t, language } = useLanguage();
 
   const generateImage = async () => {
-    toast.info(language === 'ar' ? 'ميزة التصميم بالذكاء الاصطناعي معطلة حاليًا.' : 'AI Design feature is currently disabled.');
+    if (!prompt) return;
+    
+    if (window.aistudio) {
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await window.aistudio.openSelectKey();
+      }
+    }
+
+    setIsGenerating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview',
+        contents: {
+          parts: [{ text: `High-end luxury fashion product photography. ${prompt}. Professional studio lighting, minimalist background, 8k resolution, photorealistic.` }]
+        },
+        config: {
+          imageConfig: {
+            aspectRatio: "16:9",
+            imageSize: size
+          }
+        }
+      });
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          setGeneratedImage(`data:image/jpeg;base64,${part.inlineData.data}`);
+          toast.success(language === 'ar' ? 'تم توليد التصميم بنجاح!' : 'Design generated successfully!');
+          break;
+        }
+      }
+    } catch (error: any) {
+      console.error("Image generation failed", error);
+      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+      if (errorMessage.includes('PERMISSION_DENIED') || errorMessage.includes('403') || errorMessage.includes('Requested entity was not found')) {
+        if (window.aistudio) {
+          await window.aistudio.openSelectKey();
+          toast.error(language === 'ar' ? 'يرجى اختيار مفتاح API صالح والمحاولة مرة أخرى.' : 'Please select a valid API key and try again.');
+        } else {
+          toast.error(language === 'ar' ? 'تم رفض الإذن. يرجى التأكد من صلاحيات مفتاح API.' : 'Permission denied. Please ensure your API key has access.');
+        }
+      } else {
+        toast.error(language === 'ar' ? 'فشل توليد الصورة. يرجى المحاولة مرة أخرى.' : 'Failed to generate image. Please try again.');
+      }
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const saveDesign = async () => {
