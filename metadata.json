@@ -1,8 +1,6 @@
 {
   "name": " Aura Luxury 1",
   "description": "High-end luxury fashion platform with AI Virtual Try-On for eyewear, hats, watches, shoes, and apparel.",
-  "requestFramePermissions": [
-    "camera"
-  ],
+  "requestFramePermissions": [],
   "majorCapabilities": []
 }
